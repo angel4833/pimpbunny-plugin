@@ -21,3 +21,4 @@ find ./src -exec touch -d "@0" {} \;
 zip -X -r plugin.zip src/ bundle.js plugin.yaml
 
 echo "Done! Plugin created: plugin.zip"
+ls -la plugin.zip
