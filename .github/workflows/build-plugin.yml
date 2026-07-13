@@ -11,6 +11,10 @@ on:
     branches: [ main ]
   workflow_dispatch:
 
+permissions:
+  contents: write
+  actions: read
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -40,17 +44,19 @@ jobs:
     
     - name: Create Release
       if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-      uses: ncipollo/release-action@v1
+      uses: softprops/action-gh-release@v1
       with:
-        artifacts: "plugin.zip,update.yaml"
-        tag: v${{ github.run_number }}
+        files: |
+          plugin.zip
+          update.yaml
+        tag_name: v${{ github.run_number }}
         body: |
           ## PimpBunny Plugin Release
           
           **SHA256:** ${{ steps.sha256.outputs.sha256 }}
           
           ### Installation
-          1. Download `pimpbunny.zip`
+          1. Download `plugin.zip`
           2. Follow Hedon Haven plugin installation instructions
           
           ### Files
@@ -58,3 +64,5 @@ jobs:
           - `update.yaml` - Update configuration
         draft: false
         prerelease: false
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
