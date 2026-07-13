@@ -137,13 +137,13 @@ async function getSearchResults(request, page) {
 }
 
 function getVideoUriFromID(videoID) {
-  return `https://pimpbunny.com/video/${videoID}`;
+  return `https://pimpbunny.com/videos/${videoID}`;
 }
 
 async function getVideoMetadata(videoId, uvp) {
   try {
     consoleLog("info", `Fetching video metadata for: ${videoId}`);
-    const response = await httpRequest(`https://pimpbunny.com/video/${videoId}`, {});
+    const response = await httpRequest(`https://pimpbunny.com/videos/${videoId}`, {});
     
     if (response.status !== 200) {
       consoleLog("error", `Failed to fetch video: ${response.status}`);
@@ -174,7 +174,7 @@ function cancelGetProgressThumbnails() {
 }
 
 function getCommentUriFromID(commentID, videoID) {
-  return `https://pimpbunny.com/video/${videoID}#comment-${commentID}`;
+  return `https://pimpbunny.com/videos/${videoID}#comment-${commentID}`;
 }
 
 async function getComments(videoID, rawHtml, page) {
@@ -200,13 +200,13 @@ async function getVideoSuggestions(videoID, rawHtml, page) {
 }
 
 function getAuthorUriFromID(authorID) {
-  return `https://pimpbunny.com/author/${authorID}`;
+  return `https://pimpbunny.com/onlyfans-creators/${authorID}`;
 }
 
 async function getAuthorPage(authorID) {
   try {
     consoleLog("info", `Fetching author page for: ${authorID}`);
-    const response = await httpRequest(`https://pimpbunny.com/author/${authorID}`, {});
+    const response = await httpRequest(`https://pimpbunny.com/onlyfans-creators/${authorID}`, {});
     
     if (response.status !== 200) {
       consoleLog("error", `Failed to fetch author page: ${response.status}`);
@@ -224,7 +224,7 @@ async function getAuthorPage(authorID) {
 async function getAuthorVideos(authorID, page) {
   try {
     consoleLog("info", `Fetching videos for author ${authorID} - page ${page}`);
-    const response = await httpRequest(`https://pimpbunny.com/author/${authorID}?page=${page}`, {});
+    const response = await httpRequest(`https://pimpbunny.com/onlyfans-creators/${authorID}?page=${page}`, {});
     
     if (response.status !== 200) {
       consoleLog("error", `Failed to fetch author videos: ${response.status}`);
@@ -241,54 +241,60 @@ async function getAuthorVideos(authorID, page) {
 
 // ============= HELPER FUNCTIONS =============
 
-function extractTextBetween(html, startTag, endTag) {
-  try {
-    const startIndex = html.indexOf(startTag);
-    if (startIndex === -1) return "";
-    
-    const endIndex = html.indexOf(endTag, startIndex + startTag.length);
-    if (endIndex === -1) return "";
-    
-    return html.substring(startIndex + startTag.length, endIndex).trim();
-  } catch (e) {
-    return "";
-  }
-}
-
 function parseVideosFromHtml(htmlBody) {
   try {
     const videos = [];
     
-    // Extract video containers - adjust selectors based on actual HTML structure
-    const videoPattern = /<div[^>]*class="[^"]*video[^"]*"[^>]*data-id="([^"]*)"[^>]*>/gi;
-    let match;
+    // Match video cards with class "b6m-video"
+    const videoCardPattern = /<div[^>]*class="[^"]*b6m-video[^"]*"[^>]*>[\s\S]*?<a\s+class="ui-heading-root[^>]*><\/a>/g;
+    let cardMatch;
     
-    while ((match = videoPattern.exec(htmlBody)) !== null) {
-      const videoId = match[1];
+    while ((cardMatch = videoCardPattern.exec(htmlBody)) !== null) {
+      const cardHtml = cardMatch[0];
+      
+      // Extract video URL and ID from href
+      const hrefMatch = cardHtml.match(/<a[^>]*class="ui-card-link[^"]*"[^>]*href="https:\/\/pimpbunny\.com\/videos\/([^"]+)"/);
+      if (!hrefMatch) continue;
+      
+      const videoId = hrefMatch[1];
       
       // Extract title
-      const titleMatch = htmlBody.substring(match.index, match.index + 2000).match(/<h[2-4][^>]*>([^<]+)<\/h[2-4]>/);
+      const titleMatch = cardHtml.match(/<div[^>]*class="[^"]*ui-card-title[^"]*"[^>]*>([^<]+)<\/div>/);
       const title = titleMatch ? titleMatch[1].trim() : "Untitled";
       
-      // Extract thumbnail
-      const thumbnailMatch = htmlBody.substring(match.index, match.index + 2000).match(/<img[^>]*src="([^"]*)"[^>]*>/);
+      // Extract thumbnail URL
+      const thumbnailMatch = cardHtml.match(/<img[^>]*class="[^"]*ui-card-thumbnail[^"]*"[^>]*src="([^"]*)"[^>]*>/);
       const thumbnail = thumbnailMatch ? thumbnailMatch[1] : "";
       
-      // Extract duration
-      const durationMatch = htmlBody.substring(match.index, match.index + 2000).match(/duration[">:]*(\d+):(\d+)/i);
+      // Extract duration - look for ui-card-duration
+      const durationMatch = cardHtml.match(/<div[^>]*class="[^"]*ui-card-duration[^"]*"[^>]*>([^<]+)<\/div>/);
       let duration = 0;
       if (durationMatch) {
-        duration = parseInt(durationMatch[1]) * 60 + parseInt(durationMatch[2]);
+        const durationStr = durationMatch[1].trim();
+        const parts = durationStr.split(':');
+        if (parts.length === 2) {
+          duration = parseInt(parts[0]) * 60 + parseInt(parts[1]);
+        }
       }
       
-      // Extract author
-      const authorMatch = htmlBody.substring(match.index, match.index + 2000).match(/<a[^>]*href="\/author\/([^"]*)"[^>]*>([^<]+)<\/a>/);
+      // Extract author name - look for ui-card-related-models link
+      const authorMatch = cardHtml.match(/<a[^>]*class="accent"[^>]*href="https:\/\/pimpbunny\.com\/onlyfans-creators\/([^"\/]+)[^"]*"[^>]*><span[^>]*class="[^"]*text-truncate[^"]*"[^>]*>([^<]+)<\/span><\/a>/);
       const authorId = authorMatch ? authorMatch[1] : "unknown";
       const authorName = authorMatch ? authorMatch[2].trim() : "Unknown";
       
-      // Extract views
-      const viewsMatch = htmlBody.substring(match.index, match.index + 2000).match(/(\d+(?:,\d+)*)\s*(?:views?|vistas)/i);
-      const views = viewsMatch ? parseInt(viewsMatch[1].replace(/,/g, "")) : 0;
+      // Extract views - look for SVG with view icon followed by span
+      const viewsMatch = cardHtml.match(/<svg[^>]*width="18"[^>]*height="18"[\s\S]*?<\/svg>\s*<span>([^<]+)<\/span>/);
+      let views = 0;
+      if (viewsMatch) {
+        const viewsStr = viewsMatch[1].trim().replace('K', '000').replace('M', '000000');
+        views = parseInt(viewsStr) || 0;
+      }
+      
+      // Extract likes - look for positive class span
+      const likesMatch = cardHtml.match(/<div[^>]*class="positive"[\s\S]*?<span>([^<]+)<\/span>/);
+      const likes = likesMatch ? parseInt(likesMatch[1]) : 0;
+      
+      const uploadDate = Math.floor(Date.now() / 1000);
       
       if (videoId) {
         videos.push({
@@ -299,11 +305,12 @@ function parseVideosFromHtml(htmlBody) {
           authorID: authorId,
           authorName: authorName,
           viewsTotal: views,
-          uploadDate: Math.floor(Date.now() / 1000),
+          uploadDate: uploadDate,
         });
       }
     }
     
+    consoleLog("info", `Parsed ${videos.length} videos from HTML`);
     return videos;
   } catch (e) {
     consoleLog("error", `Error parsing videos: ${e.message}`);
@@ -316,14 +323,14 @@ function extractVideoMetadata(html, videoId) {
     const metadata = {
       iD: videoId,
       m3u8Uris: {},
-      title: extractTextBetween(html, "<h1", "</h1>") || "Untitled",
+      title: "",
       universalVideoPreview: "",
       authorID: "",
       authorName: "",
       authorSubscriberCount: 0,
       authorAvatar: "",
       actors: [],
-      description: extractTextBetween(html, 'class="description"', "</div>") || "",
+      description: "",
       viewsTotal: 0,
       tags: [],
       categories: [],
@@ -336,6 +343,12 @@ function extractVideoMetadata(html, videoId) {
       rawHtml: html,
     };
     
+    // Extract title from h1
+    const titleMatch = html.match(/<h1[^>]*>([^<]+)<\/h1>/);
+    if (titleMatch) {
+      metadata.title = titleMatch[1].trim();
+    }
+    
     // Extract views
     const viewsMatch = html.match(/(\d+(?:,\d+)*)\s*(?:views?|vistas)/i);
     if (viewsMatch) {
@@ -343,28 +356,28 @@ function extractVideoMetadata(html, videoId) {
     }
     
     // Extract author info
-    const authorMatch = html.match(/<a[^>]*href="\/author\/([^"]*)"[^>]*>([^<]+)<\/a>/);
+    const authorMatch = html.match(/<a[^>]*href="https:\/\/pimpbunny\.com\/onlyfans-creators\/([^"\/]+)[^"]*"[^>]*>([^<]+)<\/a>/);
     if (authorMatch) {
       metadata.authorID = authorMatch[1];
       metadata.authorName = authorMatch[2].trim();
     }
     
-    // Extract tags
-    const tagsMatch = html.match(/<span[^>]*class="tag"[^>]*>([^<]+)<\/span>/g);
-    if (tagsMatch) {
-      metadata.tags = tagsMatch.map(tag => extractTextBetween(tag, ">", "<"));
+    // Extract description
+    const descMatch = html.match(/<div[^>]*class="[^"]*description[^"]*"[^>]*>([^<]+)<\/div>/);
+    if (descMatch) {
+      metadata.description = descMatch[1].trim();
     }
     
-    // Extract video sources
+    // Extract video sources (m3u8)
     const m3u8Match = html.match(/https?:\/\/[^\s"'<>]+\.m3u8/gi);
     if (m3u8Match) {
       metadata.m3u8Uris[m3u8Match[0]] = m3u8Match[0];
     }
     
     // Extract likes
-    const likesMatch = html.match(/(\d+(?:,\d+)*)\s*(?:like|likes|me gusta)/i);
+    const likesMatch = html.match(/<div[^>]*class="positive"[\s\S]*?<span>(\d+)<\/span>/);
     if (likesMatch) {
-      metadata.ratingsPositiveTotal = parseInt(likesMatch[1].replace(/,/g, ""));
+      metadata.ratingsPositiveTotal = parseInt(likesMatch[1]);
     }
     
     return metadata;
@@ -377,16 +390,15 @@ function extractVideoMetadata(html, videoId) {
 function extractComments(html, page) {
   try {
     const comments = [];
-    const commentPattern = /<div[^>]*class="comment"[^>]*>/gi;
+    const commentPattern = /<div[^>]*class="[^"]*comment[^"]*"[^>]*>/gi;
     let match;
     let index = 0;
     
     while ((match = commentPattern.exec(html)) !== null && index < 10) {
       const commentHtml = html.substring(match.index, match.index + 1000);
       
-      const authorMatch = commentHtml.match(/<span[^>]*class="author"[^>]*>([^<]+)<\/span>/);
-      const textMatch = commentHtml.match(/<p[^>]*class="text"[^>]*>([^<]+)<\/p>/);
-      const dateMatch = commentHtml.match(/(\d+\s*(?:minute|hour|day|week|month|year)s?\s*ago)/i);
+      const authorMatch = commentHtml.match(/<span[^>]*class="[^"]*author[^"]*"[^>]*>([^<]+)<\/span>/);
+      const textMatch = commentHtml.match(/<p[^>]*class="[^"]*text[^"]*"[^>]*>([^<]+)<\/p>/);
       
       if (authorMatch && textMatch) {
         comments.push({
@@ -412,29 +424,11 @@ function extractComments(html, page) {
 function extractSuggestedVideos(html) {
   try {
     const videos = [];
-    const suggestionPattern = /<div[^>]*class="suggestion"[^>]*data-id="([^"]*)"[^>]*>/gi;
+    const suggestionPattern = /<div[^>]*class="[^"]*b6m-video[^"]*"[^>]*>/gi;
     let match;
     let index = 0;
     
     while ((match = suggestionPattern.exec(html)) !== null && index < 20) {
-      const videoId = match[1];
-      const videoHtml = html.substring(match.index, match.index + 1000);
-      
-      const titleMatch = videoHtml.match(/<h[2-4][^>]*>([^<]+)<\/h[2-4]>/);
-      const thumbnailMatch = videoHtml.match(/<img[^>]*src="([^"]*)"[^>]*>/);
-      
-      if (videoId && titleMatch) {
-        videos.push({
-          iD: videoId,
-          title: titleMatch[1].trim(),
-          previewThumbnailUrl: thumbnailMatch ? thumbnailMatch[1] : "",
-          duration: 0,
-          authorID: "unknown",
-          authorName: "Unknown",
-          viewsTotal: 0,
-          uploadDate: Math.floor(Date.now() / 1000),
-        });
-      }
       index++;
     }
     
@@ -470,7 +464,7 @@ function extractProgressThumbnails(html) {
 function extractSearchSuggestions(html) {
   try {
     const suggestions = [];
-    const pattern = /<li[^>]*class="suggestion"[^>]*>([^<]+)<\/li>/gi;
+    const pattern = /<li[^>]*class="[^"]*suggestion[^"]*"[^>]*>([^<]+)<\/li>/gi;
     let match;
     
     while ((match = pattern.exec(html)) !== null && suggestions.length < 10) {
@@ -488,11 +482,11 @@ function extractAuthorMetadata(html, authorId) {
   try {
     const metadata = {
       iD: authorId,
-      name: extractTextBetween(html, "<h1", "</h1>") || "Unknown",
+      name: "",
       avatar: "",
       banner: "",
       aliases: [],
-      description: extractTextBetween(html, 'class="bio"', "</div>") || "",
+      description: "",
       advancedDescription: {},
       externalLinks: {},
       viewsTotal: 0,
@@ -502,14 +496,20 @@ function extractAuthorMetadata(html, authorId) {
       rawHtml: html,
     };
     
+    // Extract name from h1 or h2
+    const nameMatch = html.match(/<h[12][^>]*>([^<]+)<\/h[12]>/);
+    if (nameMatch) {
+      metadata.name = nameMatch[1].trim();
+    }
+    
     // Extract avatar
-    const avatarMatch = html.match(/<img[^>]*class="avatar"[^>]*src="([^"]*)"[^>]*>/);
+    const avatarMatch = html.match(/<img[^>]*class="[^"]*avatar[^"]*"[^>]*src="([^"]*)"[^>]*>/);
     if (avatarMatch) {
       metadata.avatar = avatarMatch[1];
     }
     
     // Extract banner
-    const bannerMatch = html.match(/<img[^>]*class="banner"[^>]*src="([^"]*)"[^>]*>/);
+    const bannerMatch = html.match(/<img[^>]*class="[^"]*banner[^"]*"[^>]*src="([^"]*)"[^>]*>/);
     if (bannerMatch) {
       metadata.banner = bannerMatch[1];
     }
@@ -530,6 +530,12 @@ function extractAuthorMetadata(html, authorId) {
     const viewsMatch = html.match(/(\d+(?:,\d+)*)\s*(?:views?|vistas)/i);
     if (viewsMatch) {
       metadata.viewsTotal = parseInt(viewsMatch[1].replace(/,/g, ""));
+    }
+    
+    // Extract description
+    const descMatch = html.match(/<div[^>]*class="[^"]*bio[^"]*"[^>]*>([^<]+)<\/div>/);
+    if (descMatch) {
+      metadata.description = descMatch[1].trim();
     }
     
     return metadata;
