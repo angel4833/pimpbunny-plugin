@@ -1,0 +1,9 @@
+# Must be strictly major.minor.patch!
+version: v0.1.0
+downloadUrl: "https://github.com/angel4833/pimpbunny-plugin/releases/latest/download/pimpbunny.zip"
+sha256Sum: "add_checksum_here"
+# multiline changelog to display to user
+changelog:
+  - Initial release
+  - Basic homepage, search, and video metadata support
+  - Author pages and comments support

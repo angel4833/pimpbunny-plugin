@@ -1,0 +1,26 @@
+apiVersion: 1.0
+metadata:
+  codeName: "com.hedon_haven.pimpbunny"
+  prettyName: "PimpBunny"
+  version: v0.1.0
+  developer: "angel4833"
+  contactEmail: "angel4833@example.com"
+  description: "PimpBunny provider plugin for Hedon Haven"
+  updateUrl: "https://github.com/angel4833/pimpbunny-plugin/releases/latest/download/pimpbunny-update.yaml"
+  issuesUrl: "https://github.com/angel4833/pimpbunny-plugin/issues"
+
+providerData:
+  iconUrl: "https://pimpbunny.com/favicon.ico"
+  serviceUrl: "https://pimpbunny.com"
+  handleUrls:
+    - "https://pimpbunny.com/home"
+    - "https://pimpbunny.com/search"
+    - "https://pimpbunny.com/video"
+    - "https://pimpbunny.com/author"
+
+initialPageCounts:
+  initialHomePage: 0
+  initialSearchResultsPage: 0
+  initialCommentsPage: 0
+  initialVideoSuggestionsPage: 0
+  initialAuthorVideosPage: 0

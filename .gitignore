@@ -1,0 +1,9 @@
+bundle.js
+plugin.zip
+node_modules/
+.DS_Store
+*.swp
+*.swo
+*~
+.vscode/
+.idea/
