@@ -22,12 +22,18 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y zip
+    
     - name: Build plugin
       run: |
         cd src
         chmod +x compile.sh
         ./compile.sh
         cd ..
+        ls -la plugin.zip
     
     - name: Calculate SHA256
       id: sha256
