@@ -1,0 +1,60 @@
+name: Build Plugin
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'src/**'
+      - 'plugin.yaml'
+      - '.github/workflows/build-plugin.yml'
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Build plugin
+      run: |
+        cd src
+        chmod +x compile.sh
+        ./compile.sh
+        cd ..
+    
+    - name: Calculate SHA256
+      id: sha256
+      run: |
+        SHA256=$(sha256sum plugin.zip | awk '{print $1}')
+        echo "sha256=$SHA256" >> $GITHUB_OUTPUT
+        echo "Plugin SHA256: $SHA256"
+    
+    - name: Upload plugin artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: pimpbunny-plugin
+        path: plugin.zip
+    
+    - name: Create Release
+      if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+      uses: ncipollo/release-action@v1
+      with:
+        artifacts: "plugin.zip,update.yaml"
+        tag: v${{ github.run_number }}
+        body: |
+          ## PimpBunny Plugin Release
+          
+          **SHA256:** ${{ steps.sha256.outputs.sha256 }}
+          
+          ### Installation
+          1. Download `pimpbunny.zip`
+          2. Follow Hedon Haven plugin installation instructions
+          
+          ### Files
+          - `plugin.zip` - Ready to install plugin
+          - `update.yaml` - Update configuration
+        draft: false
+        prerelease: false
