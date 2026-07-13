@@ -29,11 +29,12 @@ jobs:
     
     - name: Build plugin
       run: |
-        cd src
-        chmod +x compile.sh
-        ./compile.sh
-        cd ..
-        ls -la plugin.zip
+        pwd
+        ls -la
+        chmod +x ./src/compile.sh
+        ./src/compile.sh
+        pwd
+        ls -la plugin.zip || echo "plugin.zip not found in root"
     
     - name: Calculate SHA256
       id: sha256
