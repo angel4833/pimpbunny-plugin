@@ -2,7 +2,7 @@ apiVersion: 1.0
 metadata:
   codeName: "com.hedon_haven.pimpbunny"
   prettyName: "PimpBunny"
-  version: v0.1.1
+  version: v0.1.2
   developer: "angel4833"
   contactEmail: "angel4833@example.com"
   issueTrackerUrl: "https://github.com/angel4833/pimpbunny-plugin/issues"
@@ -13,7 +13,6 @@ providerData:
   iconUrl: "https://pimpbunny.com/favicon.ico"
   serviceUrl: "https://pimpbunny.com"
   handleUrls:
-    - "https://pimpbunny.com"
     - "https://pimpbunny.com/"
     - "https://pimpbunny.com/videos/"
     - "https://pimpbunny.com/search"
