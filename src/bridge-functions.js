@@ -14,17 +14,12 @@ function decodeBase64ToText(value) {
     }
   } catch (_) {}
 
-  try {
-    if (typeof toByteArray === "function") {
-      return String.fromCharCode(...toByteArray(value));
-    }
-  } catch (_) {}
-
   return value;
 }
 
-// QuickJS receives HTTP response bodies as base64 from Hedon Haven.
-// We keep both the decoded text and the original base64 payload.
+// Hedon Haven sends response.body as base64.
+// HTML parsers need `body` as decoded text.
+// Thumbnail/binary callers can use `bodyBase64` if needed.
 async function httpRequest(url, headers = {}) {
   const response = await sendMessage("httpRequest", JSON.stringify({
     url: url,
