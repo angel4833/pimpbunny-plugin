@@ -2,7 +2,7 @@ apiVersion: 1.0
 metadata:
   codeName: "com.hedon_haven.pimpbunny"
   prettyName: "PimpBunny"
-  version: v0.1.2
+  version: v0.1.3
   developer: "angel4833"
   contactEmail: "angel4833@example.com"
   issueTrackerUrl: "https://github.com/angel4833/pimpbunny-plugin/issues"
