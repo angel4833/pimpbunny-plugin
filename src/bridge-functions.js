@@ -1,39 +1,67 @@
 /// Host bridge functions
 
-// Direct web requests are not allowed from the quickjs environment
-async function httpRequest(url, headers) {
-  const response = await sendMessage("httpRequest", JSON.stringify({
-    "url": url,
-    "headers": headers
-  }));
-  return JSON.parse(response);
+function decodeBase64ToText(value) {
+  if (!value || typeof value !== "string") return "";
+
+  try {
+    if (typeof atob === "function") {
+      const binary = atob(value);
+      const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
+      if (typeof TextDecoder !== "undefined") {
+        return new TextDecoder("utf-8").decode(bytes);
+      }
+      return String.fromCharCode(...bytes);
+    }
+  } catch (_) {}
+
+  try {
+    if (typeof toByteArray === "function") {
+      return String.fromCharCode(...toByteArray(value));
+    }
+  } catch (_) {}
+
+  return value;
 }
 
-// Mirror logs into the host (and also prefixes it correctly)
+// QuickJS receives HTTP response bodies as base64 from Hedon Haven.
+// We keep both the decoded text and the original base64 payload.
+async function httpRequest(url, headers = {}) {
+  const response = await sendMessage("httpRequest", JSON.stringify({
+    url: url,
+    headers: headers || {}
+  }));
+
+  const parsed = JSON.parse(response);
+  const bodyBase64 = parsed.body || "";
+
+  return {
+    ...parsed,
+    status: parsed.statusCode ?? 0,
+    statusCode: parsed.statusCode ?? 0,
+    body: decodeBase64ToText(bodyBase64),
+    bodyBase64: bodyBase64,
+    headers: parsed.headers || {}
+  };
+}
+
 function consoleLog(level, message) {
   sendMessage("consoleLog", JSON.stringify({
-    "level": level,
-    "message": message
+    level: level,
+    message: String(message)
   }));
 }
 
-// File access is disabled in the quickjs environment
-// Keep in mind that this function is only able to write the plugins own cache files
 async function writeCacheFile(filePath, base64EncodedContents) {
   const response = await sendMessage("writeCacheFile", JSON.stringify({
-    "filePath": filePath,
-    "base64EncodedContents": base64EncodedContents
+    filePath: filePath,
+    base64EncodedContents: base64EncodedContents
   }));
-  // Returns error (as String) if any exception was encountered, otherwise returns true (as bool)
   return JSON.parse(response);
 }
 
-// File access is disabled in the quickjs environment
-// Keep in mind that this function is only able to read the plugins own cache files
 async function readCacheFile(filePath) {
   const response = await sendMessage("readCacheFile", JSON.stringify({
-    "filePath": filePath
+    filePath: filePath
   }));
-  // Returns the file content as a base64 encoded string or an error (as String) if any exception was encountered
   return JSON.parse(response);
 }
