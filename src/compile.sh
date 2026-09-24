@@ -1,16 +1,18 @@
-#!/usr/bin/env bash
-set -euo pipefail
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-cd "$ROOT_DIR"
+#!/bin/bash
+set -e
+
+echo "Generating bundle.js from src/*.js..."
 : > bundle.js
-for file in "$SCRIPT_DIR"/*.js; do
-  printf '// ==== START: %s ====\n' "$file" >> bundle.js
+
+for file in ./src/*.js; do
+  echo "// ==== START: $file ====" >> bundle.js
   cat "$file" >> bundle.js
-  printf '\n// ==== END: %s ====\n\n' "$file" >> bundle.js
+  echo -e "\n// ==== END: $file ===\n" >> bundle.js
 done
+
+echo "Creating installable plugin zip..."
 rm -f plugin.zip
-touch -d '@0' plugin.yaml bundle.js
-find "$SCRIPT_DIR" -type f -exec touch -d '@0' {} +
-zip -X -q -r plugin.zip src/ bundle.js plugin.yaml
-echo "Created $ROOT_DIR/plugin.zip"
+zip -X -j plugin.zip plugin.yaml bundle.js
+
+echo "Done!"
+ls -l plugin.zip
