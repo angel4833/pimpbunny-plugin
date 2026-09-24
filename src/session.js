@@ -1,36 +1,34 @@
-// PimpBunny request/session helpers.
+// PimpBunny session support. Hedon Haven's host preserves response headers,
+// so keep cookies between requests like the official Pornhub implementation.
 const pimpBunnySession = { cookies: {} };
 
-function cookieHeader() {
+function pimpBunnyCookieHeader() {
   return Object.keys(pimpBunnySession.cookies)
     .map((key) => `${key}=${pimpBunnySession.cookies[key]}`)
     .join("; ");
 }
 
-function rememberCookies(headers) {
+function pimpBunnyRememberCookies(headers) {
   if (!headers) return;
-  const setCookie = headers["set-cookie"] || headers["Set-Cookie"] || "";
-  if (!setCookie) return;
-  const values = Array.isArray(setCookie) ? setCookie : [setCookie];
-  values.forEach((value) => {
-    String(value).split(/,(?=[^;,=]+=[^;,]+)/).forEach((item) => {
-      const match = item.trim().match(/^([^=;]+)=([^;]*)/);
-      if (match && match[1]) pimpBunnySession.cookies[match[1]] = match[2];
-    });
-  });
+  const raw = headers["set-cookie"] || headers["Set-Cookie"] || "";
+  const values = Array.isArray(raw) ? raw : [raw];
+  for (const value of values) {
+    const match = String(value).match(/^\s*([^=;]+)=([^;]*)/);
+    if (match) pimpBunnySession.cookies[match[1]] = match[2];
+  }
 }
 
-async function pimpBunnyRequest(url, extraHeaders = {}) {
-  const headers = {
+async function pimpBunnyRequest(url, headers = {}) {
+  const requestHeaders = {
     "User-Agent": "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 Chrome/120 Mobile Safari/537.36",
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
     "Accept-Language": "en-US,en;q=0.9",
     "Referer": "https://pimpbunny.com/",
-    ...extraHeaders,
+    ...headers,
   };
-  const cookies = cookieHeader();
-  if (cookies) headers.Cookie = cookies;
-  const response = await httpRequest(url, headers);
-  rememberCookies(response.headers);
+  const cookie = pimpBunnyCookieHeader();
+  if (cookie) requestHeaders.Cookie = cookie;
+  const response = await httpRequest(url, requestHeaders);
+  pimpBunnyRememberCookies(response.headers);
   return response;
 }
