@@ -1,4 +1,4 @@
-const PLUGIN_CODE_NAME = "com.hedon_haven.pimpbunny";
+const PLUGIN_CODE_NAME = "com.angel4833.pimpbunny";
 
 function getStatusCode(response) {
   if (!response) return 0;
@@ -22,6 +22,16 @@ function cleanText(value) {
     .trim();
 }
 
+function normalizeImageUrl(value) {
+  const abs = absoluteUrl(value);
+  if (!abs) return "";
+  // Strip format=avif so Flutter Image.memory / NetworkImage receives standard JPEG
+  return abs
+    .replace(/([?&])format=avif(?:&quality=\d+)?/i, "$1")
+    .replace(/[?&]+$/, "")
+    .replace(/\?&/, "?");
+}
+
 function absoluteUrl(value) {
   if (!value) return "";
   const trimmed = String(value).trim();
@@ -38,6 +48,10 @@ function absoluteUrl(value) {
 
 function parseDuration(value) {
   const str = String(value || "").trim();
+  const iso = str.match(/^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$/i);
+  if (iso) {
+    return (Number(iso[1] || 0) * 3600) + (Number(iso[2] || 0) * 60) + Number(iso[3] || 0);
+  }
   const match = str.match(/(\d{1,2}:\d{2}(?::\d{2})?)/);
   if (!match) return 0;
   const parts = match[1].split(":").map(Number);
@@ -219,25 +233,22 @@ async function getHomePage(page) {
 
 async function downloadThumbnail(uri, thumbnailHttpHeaders) {
   try {
-    if (!uri) return new Uint8Array(0);
+    if (!uri) return [];
     const response = await pimpBunnyRequest(uri, thumbnailHttpHeaders || {});
     if (getStatusCode(response) === 200) {
+      if (Array.isArray(response.bodyBytes)) {
+        return response.bodyBytes;
+      }
       if (response.bodyBytes) {
-        return Uint8Array.from(response.bodyBytes);
+        return Array.from(response.bodyBytes);
       }
-      if (response.bodyBase64 && typeof atob === "function") {
-        const bin = atob(response.bodyBase64);
-        const bytes = new Uint8Array(bin.length);
-        for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-        return bytes;
-      }
-      return new Uint8Array(0);
+      return [];
     }
     consoleLog("error", `Thumbnail download failed: ${getStatusCode(response)}`);
-    return new Uint8Array(0);
+    return [];
   } catch (e) {
     consoleLog("error", `Thumbnail download error: ${e.message}`);
-    return new Uint8Array(0);
+    return [];
   }
 }
 
@@ -348,7 +359,6 @@ async function getAuthorPage(authorID) {
 
 async function getAuthorVideos(authorID, rawHtmlOrPage, maybePage) {
   try {
-    // Hedon Haven's wrapper passes (authorID, rawHtml, page), while 2-arg callers pass (authorID, page).
     let rawHtml = null;
     let pageNum = 0;
     if (typeof maybePage !== "undefined") {
@@ -375,34 +385,46 @@ async function getAuthorVideos(authorID, rawHtmlOrPage, maybePage) {
   }
 }
 
-function buildVideoPreviewFromCard(cardHtml, id) {
+function buildVideoPreviewFromCard(rawCardHtml, id) {
+  // Strip massive inline base64 blur placeholders BEFORE regex parsing so card data isn't truncated
+  const cardHtml = String(rawCardHtml || "").replace(/src=["']data:[^"']*["']/gi, 'src=""');
+
   const title = cleanText(
     findMatch(cardHtml, [
+      /<div[^>]*class=["'][^"']*ui-card-title[^"']*["'][^>]*>([\s\S]*?)<\/div>/i,
       /<meta[^>]*property=["']og:title["'][^>]*content=["']([^"']+)["'][^>]*>/i,
       /<h[1-6][^>]*>([\s\S]*?)<\/h[1-6]>/i,
-      /class=["'][^"']*title[^"']*["'][^>]*>([\s\S]*?)<\/(?:div|span|p|a|h[1-6])>/i,
       /<img[^>]*alt=["']([^"']+)["'][^>]*>/i,
       /<a[^>]*href=["'](?:https?:\/\/pimpbunny\.com)?\/videos\/[^"']+["'][^>]*>([\s\S]*?)<\/a>/i,
     ]) || id
   );
 
-  const thumbnail = absoluteUrl(
+  const thumbnail = normalizeImageUrl(
     findMatch(cardHtml, [
-      /<img[^>]*data-src=["']([^"']+)["'][^>]*>/i,
       /<img[^>]*data-original=["']([^"']+)["'][^>]*>/i,
+      /<img[^>]*data-src=["']([^"']+)["'][^>]*>/i,
+      /<img[^>]*data-webp=["']([^"']+)["'][^>]*>/i,
       /<img[^>]*data-lazy=["']([^"']+)["'][^>]*>/i,
       /<img[^>]*src=["'](?!data:)([^"']+\.(?:jpg|jpeg|png|webp|avif)(?:\?[^"']*)?)["'][^>]*>/i,
-      /https?:\/\/[^"'\s>]+\.(?:jpg|jpeg|png|webp|avif)(?:\?[^"'\s>]*)?/i,
+      /https?:\/\/[^"'\s>]+\.(?:jpg|jpeg|png|webp)(?:\?[^"'\s>]*)?/i,
+    ])
+  );
+
+  const previewVideo = absoluteUrl(
+    findMatch(cardHtml, [
+      /<img[^>]*data-preview=["']([^"']+)["'][^>]*>/i,
     ])
   );
 
   const duration = parseDuration(
     findMatch(cardHtml, [
+      /class=["'][^"']*ui-card-duration[^"']*["'][^>]*>([\s\S]*?)<\/div>/i,
       /\b(\d{1,2}:\d{2}(?::\d{2})?)\b/i,
     ])
   );
 
   const viewsRaw = findMatch(cardHtml, [
+    /class=["'][^"']*ui-card-info[^"']*["'][^>]*>[\s\S]*?<span>\s*([\d.,]+\s*[KMB]?)\s*<\/span>/i,
     /(\d+(?:[.,]\d+)?\s*[KMB]?)\s*(?:views?|vistas)/i,
   ]);
   const viewsTotal = viewsRaw ? parseCompactCount(viewsRaw) : 0;
@@ -417,6 +439,11 @@ function buildVideoPreviewFromCard(cardHtml, id) {
   );
 
   const headers = pimpBunnyDefaultHeaders();
+  const unavailableFields = ["ratingsPositivePercent", "maxQuality"];
+  if (!thumbnail) unavailableFields.push("thumbnail");
+  if (!previewVideo) {
+    unavailableFields.push("previewVideo", "previewVideoHttpHeaders");
+  }
 
   return {
     iD: id,
@@ -424,20 +451,20 @@ function buildVideoPreviewFromCard(cardHtml, id) {
     plugin: PLUGIN_CODE_NAME,
     thumbnail: thumbnail || null,
     thumbnailHttpHeaders: headers,
-    thumbnailBinary: [],
-    previewVideo: null,
-    previewVideoHttpHeaders: null,
+    thumbnailBinary: null,
+    previewVideo: previewVideo || null,
+    previewVideoHttpHeaders: previewVideo ? headers : null,
     duration: duration,
     viewsTotal: viewsTotal,
-    ratingsPositivePercent: 0,
-    maxQuality: 0,
+    ratingsPositivePercent: null,
+    maxQuality: null,
     virtualReality: false,
     authorName: authorName || "Unknown",
     authorID: authorHref || "unknown",
     verifiedAuthor: false,
     lastWatched: null,
     addedOn: null,
-    unavailableFields: [],
+    unavailableFields: unavailableFields,
     scrapeFailException: null,
   };
 }
@@ -447,11 +474,12 @@ function parseVideosFromHtml(htmlBody) {
   const videos = [];
   const seen = {};
 
-  // Prefer structured card containers to prevent bleeding metadata between adjacent cards
   const cardSplit = source.split(/<div[^>]*class=["'][^"']*ui-card-root[^"']*["'][^>]*>/i);
   if (cardSplit.length > 1) {
     for (let i = 1; i < cardSplit.length; i++) {
-      const card = cardSplit[i].slice(0, 4000);
+      // Strip inline data: URIs before slicing so we never cut off card metadata
+      const cleanedChunk = cardSplit[i].replace(/src=["']data:[^"']*["']/gi, 'src=""');
+      const card = cleanedChunk.slice(0, 4500);
       const idMatch = card.match(/href=["'](?:https?:\/\/pimpbunny\.com)?\/videos\/([^"'?#/]+)\/?["']/i);
       if (!idMatch) continue;
       const id = decodeURIComponent((idMatch[1] || "").replace(/\/$/, ""));
@@ -465,7 +493,6 @@ function parseVideosFromHtml(htmlBody) {
     }
   }
 
-  // Fallback for generic/minimal HTML fixtures
   const regex = /href=(?:["'])(https?:\/\/pimpbunny\.com\/videos\/|\/videos\/)([^"'?#/]+)\/?(?:["'])/gi;
   let match;
   while ((match = regex.exec(source)) !== null) {
@@ -474,7 +501,7 @@ function parseVideosFromHtml(htmlBody) {
     seen[id] = true;
 
     const cardStart = Math.max(0, match.index - 200);
-    const cardEnd = Math.min(source.length, regex.lastIndex + 1000);
+    const cardEnd = Math.min(source.length, regex.lastIndex + 1200);
     const card = source.slice(cardStart, cardEnd);
     videos.push(buildVideoPreviewFromCard(card, id));
   }
@@ -492,7 +519,6 @@ function extractQualityFromUrl(url) {
 function extractStreamMap(source) {
   const streams = {};
 
-  // 1. Check KVS kt_player video_url / video_alt_url* variables
   const ktPairs = [
     ["video_url", "video_url_text"],
     ["video_alt_url", "video_alt_url_text"],
@@ -512,7 +538,6 @@ function extractStreamMap(source) {
     streams[String(quality)] = streamUrl;
   }
 
-  // 2. Fallback: scan any direct .mp4 URLs (excluding .mp4.jpg preview screenshots)
   if (Object.keys(streams).length === 0) {
     const mp4Matches = source.match(/https?:\/\/[^\s"'<>\\]+\.mp4(?:\/?\?[^\s"'<>\\]*)?(?=["'\s<>\\]|$)/gi) || [];
     for (const url of mp4Matches) {
@@ -525,7 +550,6 @@ function extractStreamMap(source) {
     }
   }
 
-  // 3. Also extract .m3u8 streams if present
   const m3u8Matches = source.match(/https?:\/\/[^\s"'<>\\]+\.m3u8[^\s"'<>\\]*/gi) || [];
   m3u8Matches.forEach((url, index) => {
     const quality = extractQualityFromUrl(url) || (1080 - index * 100);
@@ -537,11 +561,27 @@ function extractStreamMap(source) {
   return streams;
 }
 
+function extractJsonLd(source) {
+  const matches = source.match(/<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi) || [];
+  for (const block of matches) {
+    const inner = block.replace(/^<script[^>]*>/i, "").replace(/<\/script>$/i, "").trim();
+    try {
+      const parsed = JSON.parse(inner);
+      if (parsed && (parsed["@type"] === "VideoObject" || parsed.name || parsed.interactionStatistic)) {
+        return parsed;
+      }
+    } catch (_) {}
+  }
+  return null;
+}
+
 function extractVideoMetadata(html, videoId, uvp) {
   const source = String(html || "");
   const headers = pimpBunnyDefaultHeaders();
+  const ld = extractJsonLd(source);
 
   const title = cleanText(
+    (ld && ld.name) ||
     findMatch(source, [
       /<meta[^>]*property=["']og:title["'][^>]*content=["']([^"']+)["'][^>]*>/i,
       /<h1[^>]*>([\s\S]*?)<\/h1>/i,
@@ -560,6 +600,7 @@ function extractVideoMetadata(html, videoId, uvp) {
   );
 
   const description = cleanText(
+    (ld && ld.description) ||
     findMatch(source, [
       /<meta[^>]*name=["']description["'][^>]*content=["']([^"']+)["'][^>]*>/i,
       /<div[^>]*class="[^"]*description[^"]*"[^>]*>([\s\S]*?)<\/div>/i,
@@ -567,44 +608,71 @@ function extractVideoMetadata(html, videoId, uvp) {
     ])
   );
 
-  const views = findMatch(source, [
-    /(\d+(?:[.,]\d+)*)\s*(?:views?|vistas)/i,
-  ]);
-  const viewsTotal = views ? Number.parseInt(String(views).replace(/[.,]/g, ""), 10) || 0 : 0;
+  let viewsTotal = 0;
+  let ratingsPositiveTotal = 0;
+  if (ld && Array.isArray(ld.interactionStatistic)) {
+    for (const stat of ld.interactionStatistic) {
+      const type = String(stat?.interactionType?.["@type"] || stat?.interactionType || "");
+      const count = Number.parseInt(String(stat?.userInteractionCount || "0").replace(/,/g, ""), 10) || 0;
+      if (/WatchAction/i.test(type)) viewsTotal = count;
+      if (/LikeAction/i.test(type)) ratingsPositiveTotal = count;
+    }
+  }
 
-  const likes = findMatch(source, [
-    /<(?:div|span)[^>]*class="[^"]*positive[^"]*"[^>]*>[\s\S]*?<span[^>]*>(\d+(?:,\d+)*)<\/span>/i,
-  ]);
-  const ratingsPositiveTotal = likes ? Number.parseInt(String(likes).replace(/,/g, ""), 10) || 0 : 0;
+  if (!viewsTotal) {
+    const views = findMatch(source, [/(\d+(?:[.,]\d+)*)\s*(?:views?|vistas)/i]);
+    if (views) viewsTotal = Number.parseInt(String(views).replace(/[.,]/g, ""), 10) || 0;
+  }
+
+  if (!ratingsPositiveTotal) {
+    const likes = findMatch(source, [
+      /<(?:div|span)[^>]*class="[^"]*positive[^"]*"[^>]*>[\s\S]*?<span[^>]*>(\d+(?:,\d+)*)<\/span>/i,
+    ]);
+    if (likes) ratingsPositiveTotal = Number.parseInt(String(likes).replace(/,/g, ""), 10) || 0;
+  }
+
+  let uploadDate = Math.floor(Date.now() / 1000);
+  if (ld && ld.uploadDate) {
+    const parsedTime = Date.parse(String(ld.uploadDate));
+    if (!Number.isNaN(parsedTime)) {
+      uploadDate = Math.floor(parsedTime / 1000);
+    }
+  }
 
   const m3u8Uris = extractStreamMap(source);
+  const ogThumb = normalizeImageUrl(
+    (ld && ld.thumbnailUrl) ||
+    findMatch(source, [/<meta[^>]*property=["']og:image["'][^>]*content=["']([^"']+)["'][^>]*>/i])
+  );
 
   const safePreview = uvp && uvp.iD
-    ? { ...uvp, plugin: uvp.plugin || PLUGIN_CODE_NAME }
+    ? {
+        ...uvp,
+        plugin: PLUGIN_CODE_NAME,
+        thumbnail: uvp.thumbnail ? normalizeImageUrl(uvp.thumbnail) : (ogThumb || null),
+        thumbnailBinary: null,
+        unavailableFields: Array.isArray(uvp.unavailableFields) ? uvp.unavailableFields : [],
+      }
     : {
         iD: videoId,
         title: title || videoId,
         plugin: PLUGIN_CODE_NAME,
-        thumbnail: absoluteUrl(
-          findMatch(source, [
-            /<meta[^>]*property=["']og:image["'][^>]*content=["']([^"']+)["'][^>]*>/i,
-          ])
-        ) || null,
+        thumbnail: ogThumb || null,
         thumbnailHttpHeaders: headers,
-        thumbnailBinary: [],
+        thumbnailBinary: null,
         previewVideo: null,
         previewVideoHttpHeaders: null,
-        duration: 0,
+        duration: ld && ld.duration ? parseDuration(ld.duration) : 0,
         viewsTotal: viewsTotal,
-        ratingsPositivePercent: 0,
-        maxQuality: 0,
+        ratingsPositivePercent: null,
+        maxQuality: null,
         virtualReality: false,
         authorName: authorName || "Unknown",
         authorID: authorHref || "unknown",
         verifiedAuthor: false,
         lastWatched: null,
         addedOn: null,
-        unavailableFields: [],
+        unavailableFields: ["previewVideo", "previewVideoHttpHeaders", "ratingsPositivePercent", "maxQuality"],
         scrapeFailException: null,
       };
 
@@ -615,48 +683,29 @@ function extractVideoMetadata(html, videoId, uvp) {
     playbackHttpHeaders: headers,
     title: title || safePreview.title || videoId,
     universalVideoPreview: safePreview,
-    authorID: authorHref || safePreview.authorID || "",
-    authorName: authorName || safePreview.authorName || "",
-    authorSubscriberCount: 0,
-    authorAvatar: "",
+    authorID: authorHref || safePreview.authorID || "unknown",
+    authorName: authorName || safePreview.authorName || "Unknown",
+    authorSubscriberCount: null,
+    authorAvatar: null,
     actors: [],
     description: description,
     viewsTotal: viewsTotal,
     tags: [],
     categories: [],
-    uploadDate: Math.floor(Date.now() / 1000),
+    uploadDate: uploadDate,
     ratingsPositiveTotal: ratingsPositiveTotal,
-    ratingsNegativeTotal: 0,
+    ratingsNegativeTotal: null,
     ratingsTotal: ratingsPositiveTotal,
     virtualReality: false,
-    chapters: {},
+    chapters: null,
     rawHtml: source,
-    unavailableFields: [],
+    unavailableFields: ["authorSubscriberCount", "authorAvatar", "ratingsNegativeTotal", "chapters"],
     scrapeFailException: null,
   };
 }
 
 function extractAuthorMetadata(html, authorId) {
   const source = String(html || "");
-  const metadata = {
-    iD: authorId,
-    name: "",
-    plugin: PLUGIN_CODE_NAME,
-    avatar: null,
-    banner: null,
-    aliases: [],
-    description: "",
-    advancedDescription: {},
-    externalLinks: {},
-    viewsTotal: 0,
-    videosTotal: 0,
-    subscribers: 0,
-    rank: 0,
-    rawHtml: source,
-    unavailableFields: [],
-    scrapeFailException: null,
-  };
-
   const name = cleanText(
     findMatch(source, [
       /<meta[^>]*property=["']og:title["'][^>]*content=["']([^"']+)["'][^>]*>/i,
@@ -664,32 +713,41 @@ function extractAuthorMetadata(html, authorId) {
       /<h2[^>]*>([\s\S]*?)<\/h2>/i,
     ])
   );
-  if (name) metadata.name = name;
 
-  const avatar = findMatch(source, [
-    /<meta[^>]*property=["']og:image["'][^>]*content=["']([^"']+)["'][^>]*>/i,
-    /<img[^>]*data-src=["']([^"']+\.(?:jpg|jpeg|png|webp|avif)(?:\?[^"']*)?)["'][^>]*>/i,
-    /<img[^>]*src=["'](?!data:)([^"']+\.(?:jpg|jpeg|png|webp|avif)(?:\?[^"']*)?)["'][^>]*>/i,
-  ]);
-  if (avatar) metadata.avatar = absoluteUrl(avatar);
+  const avatar = normalizeImageUrl(
+    findMatch(source, [
+      /<meta[^>]*property=["']og:image["'][^>]*content=["']([^"']+)["'][^>]*>/i,
+      /<img[^>]*data-original=["']([^"']+\.(?:jpg|jpeg|png|webp|avif)(?:\?[^"']*)?)["'][^>]*>/i,
+      /<img[^>]*data-src=["']([^"']+\.(?:jpg|jpeg|png|webp|avif)(?:\?[^"']*)?)["'][^>]*>/i,
+      /<img[^>]*src=["'](?!data:)([^"']+\.(?:jpg|jpeg|png|webp|avif)(?:\?[^"']*)?)["'][^>]*>/i,
+    ])
+  );
 
-  const videosTotal = findMatch(source, [
-    /(\d+(?:,\d+)*)\s*videos?/i,
-  ]);
-  if (videosTotal) metadata.videosTotal = Number.parseInt(String(videosTotal).replace(/,/g, ""), 10) || 0;
-
-  const subs = findMatch(source, [
-    /(\d+(?:,\d+)*)\s*(?:subscribers?|followers?)/i,
-  ]);
-  if (subs) metadata.subscribers = Number.parseInt(String(subs).replace(/,/g, ""), 10) || 0;
-
+  const videosTotal = findMatch(source, [/(\d+(?:,\d+)*)\s*videos?/i]);
+  const subs = findMatch(source, [/(\d+(?:,\d+)*)\s*(?:subscribers?|followers?)/i]);
   const desc = cleanText(
     findMatch(source, [
       /<div[^>]*class="[^"]*bio[^"]*"[^>]*>([\s\S]*?)<\/div>/i,
       /<meta[^>]*name=["']description["'][^>]*content=["']([^"']+)["'][^>]*>/i,
     ])
   );
-  if (desc) metadata.description = desc;
 
-  return metadata;
+  return {
+    iD: authorId,
+    name: name || authorId,
+    plugin: PLUGIN_CODE_NAME,
+    avatar: avatar || null,
+    banner: null,
+    aliases: [],
+    description: desc,
+    advancedDescription: {},
+    externalLinks: {},
+    viewsTotal: 0,
+    videosTotal: videosTotal ? Number.parseInt(String(videosTotal).replace(/,/g, ""), 10) || 0 : 0,
+    subscribers: subs ? Number.parseInt(String(subs).replace(/,/g, ""), 10) || 0 : 0,
+    rank: null,
+    rawHtml: source,
+    unavailableFields: ["banner", "rank"],
+    scrapeFailException: null,
+  };
 }

@@ -1,9 +1,10 @@
 # Must be strictly major.minor.patch!
-version: v0.1.0
-downloadUrl: "https://github.com/angel4833/pimpbunny-plugin/releases/latest/download/pimpbunny.zip"
+version: v0.1.5
+downloadUrl: "https://github.com/angel4833/pimpbunny-plugin/releases/latest/download/plugin.zip"
 sha256Sum: "add_checksum_here"
 # multiline changelog to display to user
 changelog:
-  - Initial release
-  - Basic homepage, search, and video metadata support
-  - Author pages and comments support
+  - Fixed Hedon Haven QuickJS bridge contract (statusCode, bodyBytes Array, Universal* schemas)
+  - Added pimpBunnyRequest browser headers and cookie persistence
+  - Fixed card parsing with lazy-load data-original/data-preview and JPEG thumbnails
+  - Extracted kt_player MP4 video stream qualities

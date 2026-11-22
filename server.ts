@@ -1,6 +1,8 @@
 import express from "express";
+import fs from "node:fs";
 import path from "node:path";
 import { getBundleInfo, invokePluginMethod } from "./runtime/pluginHost.js";
+import { buildZipBuffer } from "./runtime/zipBuilder.js";
 
 const app = express();
 const PORT = Number(process.env.PORT || 3000);
@@ -29,6 +31,32 @@ app.get("/api/plugin/bundle.js", (_req, res) => {
     res.setHeader("Content-Type", "application/javascript; charset=utf-8");
     res.setHeader("Content-Disposition", 'attachment; filename="bundle.js"');
     res.send(info.bundleCode);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ error: message });
+  }
+});
+
+app.get("/api/plugin/zip", (_req, res) => {
+  try {
+    const rootDir = process.cwd();
+    const info = getBundleInfo();
+    const pluginYamlBuf = fs.readFileSync(path.join(rootDir, "plugin.yaml"));
+    const entries = [
+      { name: "plugin.yaml", content: pluginYamlBuf },
+      { name: "bundle.js", content: info.bundleCode },
+    ];
+    for (const file of info.sourceFiles) {
+      const rel = file.name.replace(/^\.\//, "");
+      entries.push({
+        name: rel,
+        content: fs.readFileSync(path.join(rootDir, rel)),
+      });
+    }
+    const zipBuffer = buildZipBuffer(entries);
+    res.setHeader("Content-Type", "application/zip");
+    res.setHeader("Content-Disposition", 'attachment; filename="pimpbunny-plugin.zip"');
+    res.send(zipBuffer);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     res.status(500).json({ error: message });
