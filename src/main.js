@@ -234,18 +234,15 @@ async function getHomePage(page) {
 async function downloadThumbnail(uri, thumbnailHttpHeaders) {
   try {
     if (!uri) return [];
-    const response = await pimpBunnyRequest(uri, thumbnailHttpHeaders || {});
+    const response = await pimpBunnyRequest(uri, thumbnailHttpHeaders || {}, { binary: true });
     if (getStatusCode(response) === 200) {
-      if (Array.isArray(response.bodyBytes)) {
-        return response.bodyBytes;
+      if (response.isLegacyBase64Host) {
+        return response.rawBodyBase64 || "";
       }
-      if (response.bodyBytes) {
-        return Array.from(response.bodyBytes);
-      }
-      return [];
+      return response.bodyBytes || [];
     }
     consoleLog("error", `Thumbnail download failed: ${getStatusCode(response)}`);
-    return [];
+    return response.isLegacyBase64Host ? "" : [];
   } catch (e) {
     consoleLog("error", `Thumbnail download error: ${e.message}`);
     return [];

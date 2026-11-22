@@ -1,5 +1,5 @@
 # Must be strictly major.minor.patch!
-version: v0.1.5
+version: v0.1.6
 downloadUrl: "https://github.com/angel4833/pimpbunny-plugin/releases/latest/download/plugin.zip"
 sha256Sum: "add_checksum_here"
 # multiline changelog to display to user
