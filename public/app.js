@@ -28,7 +28,16 @@ const SAMPLE_VIDEO_HTML = `
     <a href="/onlyfans-creators/creator-alpha">Creator Alpha</a>
     <div>14,520 views</div>
     <div class="positive"><span>842</span></div>
-    <script>var stream = "https://cdn.example.com/hls/sample-clip-101/master.m3u8";</script>
+    <script>
+      var flashvars = {
+        video_url: 'https://pimpbunny.com/get_file/54/hash/626000/626495/626495_360p.mp4/?v-acctoken=demo360',
+        video_url_text: '360p',
+        video_alt_url: 'https://pimpbunny.com/get_file/54/hash/626000/626495/626495_720p.mp4/?v-acctoken=demo720',
+        video_alt_url_text: '720p',
+        video_alt_url2: 'https://pimpbunny.com/get_file/54/hash/626000/626495/626495_1080p.mp4/?v-acctoken=demo1080',
+        video_alt_url2_text: '1080p'
+      };
+    </script>
   </body>
 </html>
 `.trim();

@@ -189,7 +189,7 @@ export async function invokePluginMethod(
         const arrayBuf = await response.arrayBuffer();
         const buf = Buffer.from(arrayBuf);
         const bodyText = buf.toString("utf8");
-        const bodyBase64 = buf.toString("base64");
+        const bodyBytes = Array.from(buf);
 
         const respHeaders: Record<string, string | string[]> = {};
         response.headers.forEach((value, key) => {
@@ -210,10 +210,11 @@ export async function invokePluginMethod(
         });
 
         return JSON.stringify({
+          statusCode: response.status,
           status: response.status,
           headers: respHeaders,
           body: bodyText,
-          bodyBase64,
+          bodyBytes,
         });
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
@@ -225,10 +226,11 @@ export async function invokePluginMethod(
           error: message,
         });
         return JSON.stringify({
+          statusCode: 0,
           status: 0,
           headers: {},
           body: "",
-          bodyBase64: "",
+          bodyBytes: [],
           error: message,
         });
       }
@@ -257,7 +259,8 @@ export async function invokePluginMethod(
       throw new Error(`Function "${methodName}" was not found in bundle.js`);
     }
 
-    const result = await (fn as (...callArgs: unknown[]) => unknown)(...args);
+    const rawResult = await (fn as (...callArgs: unknown[]) => unknown)(...args);
+    const result = rawResult instanceof Uint8Array ? Array.from(rawResult) : rawResult;
     return {
       method: methodName,
       args,

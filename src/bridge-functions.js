@@ -1,4 +1,4 @@
-/// Host bridge functions from the official Hedon Haven JS example.
+/// Host bridge functions aligned with the Hedon Haven QuickJS plugin contract.
 async function httpRequest(url, headers) {
   const response = await sendMessage("httpRequest", JSON.stringify({
     "url": url,
@@ -14,10 +14,10 @@ function consoleLog(level, message) {
   }));
 }
 
-async function writeCacheFile(filePath, base64EncodedContents) {
+async function writeCacheFile(filePath, contentAsBytes) {
   const response = await sendMessage("writeCacheFile", JSON.stringify({
     "filePath": filePath,
-    "base64EncodedContents": base64EncodedContents
+    "contentAsBytes": contentAsBytes
   }));
   return JSON.parse(response);
 }
