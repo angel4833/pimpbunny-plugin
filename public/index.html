@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PimpBunny Hedon Haven Plugin</title>
+  <meta name="description" content="Web runtime and contract testbench for the PimpBunny Hedon Haven JavaScript plugin." />
+  <meta property="og:title" content="PimpBunny Hedon Haven Plugin" />
+  <meta property="og:description" content="Web runtime and contract testbench for the PimpBunny Hedon Haven JavaScript plugin." />
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <div>
+        <h1 id="plugin-title">PimpBunny Plugin</h1>
+        <p id="plugin-subtitle" class="subtitle">Loading plugin manifest...</p>
+      </div>
+      <div class="topbar-actions">
+        <a class="btn btn-secondary" href="/api/plugin/bundle.js" download="bundle.js">Download bundle.js</a>
+        <button id="btn-init" class="btn btn-primary" type="button">Run init()</button>
+        <button id="btn-selftest" class="btn btn-secondary" type="button">Run Functionality Test</button>
+      </div>
+    </div>
+  </header>
+
+  <main class="container">
+    <section class="grid-two">
+      <div class="card">
+        <h2>Manifest (plugin.yaml)</h2>
+        <dl id="manifest-details" class="kv-list"></dl>
+        <h3>Handled URLs</h3>
+        <ul id="handle-urls" class="tag-list"></ul>
+      </div>
+
+      <div class="card">
+        <h2>Source Files &amp; Update Metadata</h2>
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Source Module</th>
+              <th>Lines</th>
+              <th>Bytes</th>
+            </tr>
+          </thead>
+          <tbody id="source-files-body"></tbody>
+        </table>
+        <h3>update.yaml</h3>
+        <pre id="update-yaml-pre" class="code-box small"></pre>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="section-head">
+        <h2>Contract Method Runner</h2>
+        <span class="hint">Executes real <code>./src/*.js</code> inside the Node.js Hedon Haven bridge VM</span>
+      </div>
+
+      <div class="runner-controls">
+        <div class="field">
+          <label for="method-select">Plugin Function</label>
+          <select id="method-select"></select>
+        </div>
+        <div class="field">
+          <label for="preset-select">Quick Preset</label>
+          <select id="preset-select"></select>
+        </div>
+      </div>
+
+      <div class="field">
+        <label for="args-input">Arguments (JSON array)</label>
+        <textarea id="args-input" rows="5" spellcheck="false">[]</textarea>
+      </div>
+
+      <div class="runner-actions">
+        <button id="btn-run" class="btn btn-primary" type="button">Invoke Method</button>
+        <span id="run-status" class="status-text"></span>
+      </div>
+    </section>
+
+    <section class="grid-two">
+      <div class="card">
+        <h2>Return Value</h2>
+        <pre id="result-output" class="code-box">Select a method and click Invoke Method.</pre>
+      </div>
+
+      <div class="card">
+        <h2>Bridge Logs &amp; HTTP Trace</h2>
+        <h3>consoleLog Stream</h3>
+        <pre id="logs-output" class="code-box small">No logs yet.</pre>
+        <h3>httpRequest Trace</h3>
+        <pre id="network-output" class="code-box small">No HTTP requests yet.</pre>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="section-head">
+        <h2>Compiled bundle.js Preview</h2>
+        <span class="hint">Matches <code>./src/compile.sh</code> concatenation order</span>
+      </div>
+      <pre id="bundle-preview" class="code-box"></pre>
+    </section>
+  </main>
+
+  <script src="/app.js"></script>
+</body>
+</html>

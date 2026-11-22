@@ -1,0 +1,5 @@
+{
+  "name": "PimpBunny Hedon Haven Plugin",
+  "description": "Web runtime and contract testbench for the PimpBunny Hedon Haven JavaScript plugin.",
+  "requestFramePermissions": []
+}
