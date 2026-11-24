@@ -46,6 +46,53 @@ function absoluteUrl(value) {
   }
 }
 
+function cleanAuthorId(rawId) {
+  if (!rawId) return "";
+  let clean = String(rawId).trim();
+  clean = clean.replace(/^https?:\/\/[^/]+/i, "");
+  clean = clean.replace(/^\/?(?:es|de|fr|it|pt|zh|ja|ru|tr)\//i, "/");
+  clean = clean.replace(/^\/?onlyfans-creators\//i, "");
+  clean = clean.replace(/^\/+|\/+$/g, "");
+  return clean;
+}
+
+function isValidVideoId(id) {
+  if (!id) return false;
+  const clean = String(id).trim().toLowerCase();
+  // Filter out numeric pagination segments (e.g. "1", "2", "3")
+  if (/^\d{1,4}$/.test(clean)) return false;
+  // Filter out reserved directory slugs
+  if (/^(latest|top|search|videos|categories|tags|models|onlyfans-creators|feed)$/.test(clean)) return false;
+  return true;
+}
+
+// Memory cache to remember author search rescues so subsequent pagination loads the author's next video pages
+const searchAuthorCache = new Map();
+
+function findAuthorInSearch(html) {
+  const source = String(html || "");
+
+  // Priority 1: Check ui-card-model cards
+  const modelCardMatch = source.match(
+    /<div[^>]*class=["'][^"']*ui-card-model[^"']*["'][^>]*>[\s\S]*?<a[^>]*href=["'](?:https?:\/\/pimpbunny\.com)?\/onlyfans-creators\/([^"'?#/]+)\/?/i
+  );
+  if (modelCardMatch && modelCardMatch[1]) {
+    const slug = cleanAuthorId(modelCardMatch[1]);
+    if (slug) return slug;
+  }
+
+  // Priority 2: Look for any link to /onlyfans-creators/<slug>/
+  const creatorMatches = [...source.matchAll(/(?:href=["'](?:https?:\/\/pimpbunny\.com)?|\b)\/onlyfans-creators\/([^"'?#/]+)\/?/gi)];
+  for (const match of creatorMatches) {
+    const slug = cleanAuthorId(match[1]);
+    if (slug && !/^(onlyfans-creators|categories|channels|tags)$/i.test(slug)) {
+      return slug;
+    }
+  }
+
+  return null;
+}
+
 function parseDuration(value) {
   const str = String(value || "").trim();
   const iso = str.match(/^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$/i);
@@ -224,7 +271,15 @@ async function getHomePage(page) {
       consoleLog("warning", `Home page status ${getStatusCode(response)} for ${url}`);
       return [];
     }
-    return parseVideosFromHtml(response.body);
+    let videos = parseVideosFromHtml(response.body);
+    if (videos.length === 0 && pageNum > 0) {
+      const fallbackUrl = `https://pimpbunny.com/videos/?from_videos=${pageNum + 1}`;
+      const fallbackResp = await pimpBunnyRequest(fallbackUrl);
+      if (getStatusCode(fallbackResp) === 200 && fallbackResp.body) {
+        videos = parseVideosFromHtml(fallbackResp.body);
+      }
+    }
+    return videos;
   } catch (e) {
     consoleLog("error", `Home page fetch failed: ${e.message}`);
     return [];
@@ -271,17 +326,63 @@ async function getSearchSuggestions(searchString) {
 
 async function getSearchResults(request, page) {
   try {
-    const q = encodeURIComponent((request && request.searchString) || "");
+    const qRaw = (request && request.searchString) || "";
+    const qTrimmed = qRaw.trim();
+    const q = encodeURIComponent(qTrimmed);
+    const qKey = qTrimmed.toLowerCase();
     const pageNum = Number(page) || 0;
+
+    if (!q) return [];
+
+    // If this query was already identified as an author search, fetch the author's videos directly
+    const cachedAuthor = searchAuthorCache.get(qKey);
+    if (cachedAuthor) {
+      consoleLog("info", `Using rescued author "${cachedAuthor}" for search "${qRaw}" (page ${pageNum})`);
+      return await getAuthorVideos(cachedAuthor, pageNum);
+    }
+
+    // PimpBunny search pagination uses &from_videos=${pageNum + 1}
     const url = pageNum <= 0
       ? `https://pimpbunny.com/search/?q=${q}`
-      : `https://pimpbunny.com/search/${pageNum + 1}/?q=${q}`;
+      : `https://pimpbunny.com/search/?q=${q}&from_videos=${pageNum + 1}`;
+
     const response = await pimpBunnyRequest(url);
     if (getStatusCode(response) !== 200) {
       consoleLog("warning", `Search results status ${getStatusCode(response)} for ${url}`);
       return [];
     }
-    return parseVideosFromHtml(response.body);
+
+    let videos = parseVideosFromHtml(response.body);
+
+    // Fallback if &from_videos= returned 0 videos on page > 0
+    if (videos.length === 0 && pageNum > 0) {
+      const fallbackUrls = [
+        `https://pimpbunny.com/search/?q=${q}&from=${pageNum + 1}`,
+        `https://pimpbunny.com/search/${pageNum + 1}/?q=${q}`,
+      ];
+      for (const fallbackUrl of fallbackUrls) {
+        const fallbackResp = await pimpBunnyRequest(fallbackUrl);
+        if (getStatusCode(fallbackResp) === 200 && fallbackResp.body) {
+          const fallbackVideos = parseVideosFromHtml(fallbackResp.body);
+          if (fallbackVideos.length > 0) {
+            videos = fallbackVideos;
+            break;
+          }
+        }
+      }
+    }
+
+    // Author rescue: if search returned 0 video cards, check if the search result matched a creator/model
+    if (videos.length === 0 && response.body) {
+      const rescuedAuthor = findAuthorInSearch(response.body);
+      if (rescuedAuthor) {
+        consoleLog("info", `Author rescue triggered for "${qRaw}": fetching videos for creator "${rescuedAuthor}"`);
+        searchAuthorCache.set(qKey, rescuedAuthor);
+        return await getAuthorVideos(rescuedAuthor, pageNum);
+      }
+    }
+
+    return videos;
   } catch (e) {
     consoleLog("error", `Search results fetch failed: ${e.message}`);
     return [];
@@ -337,17 +438,19 @@ async function getVideoSuggestions(videoID, rawHtml, page) {
 }
 
 function getAuthorUriFromID(authorID) {
-  return `https://pimpbunny.com/onlyfans-creators/${encodeURIComponent(authorID)}/`;
+  const clean = cleanAuthorId(authorID);
+  return `https://pimpbunny.com/onlyfans-creators/${encodeURIComponent(clean)}/`;
 }
 
 async function getAuthorPage(authorID) {
   try {
-    const response = await pimpBunnyRequest(getAuthorUriFromID(authorID));
+    const cleanId = cleanAuthorId(authorID);
+    const response = await pimpBunnyRequest(getAuthorUriFromID(cleanId));
     if (getStatusCode(response) !== 200) {
-      consoleLog("error", `Author page status ${getStatusCode(response)} for ${authorID}`);
+      consoleLog("error", `Author page status ${getStatusCode(response)} for ${cleanId}`);
       return null;
     }
-    return extractAuthorMetadata(response.body, authorID);
+    return extractAuthorMetadata(response.body, cleanId);
   } catch (e) {
     consoleLog("error", `Author page fetch failed: ${e.message}`);
     return null;
@@ -365,17 +468,30 @@ async function getAuthorVideos(authorID, rawHtmlOrPage, maybePage) {
       pageNum = Number(rawHtmlOrPage) || 0;
     }
 
+    const cleanId = cleanAuthorId(authorID);
+    if (!cleanId) return [];
+
     if (pageNum === 0 && typeof rawHtml === "string" && rawHtml.length > 0) {
       const parsed = parseVideosFromHtml(rawHtml);
       if (parsed.length > 0) return parsed;
     }
 
+    const baseUri = `https://pimpbunny.com/onlyfans-creators/${encodeURIComponent(cleanId)}/`;
     const url = pageNum <= 0
-      ? getAuthorUriFromID(authorID)
-      : `${getAuthorUriFromID(authorID)}${pageNum + 1}/`;
+      ? baseUri
+      : `${baseUri}${pageNum + 1}/`;
     const response = await pimpBunnyRequest(url);
     if (getStatusCode(response) !== 200) return [];
-    return parseVideosFromHtml(response.body);
+
+    let videos = parseVideosFromHtml(response.body);
+    if (videos.length === 0 && pageNum > 0) {
+      const fallbackUrl = `${baseUri}?from_videos=${pageNum + 1}`;
+      const fallbackResp = await pimpBunnyRequest(fallbackUrl);
+      if (getStatusCode(fallbackResp) === 200 && fallbackResp.body) {
+        videos = parseVideosFromHtml(fallbackResp.body);
+      }
+    }
+    return videos;
   } catch (e) {
     consoleLog("error", `Author videos fetch failed: ${e.message}`);
     return [];
@@ -426,9 +542,11 @@ function buildVideoPreviewFromCard(rawCardHtml, id) {
   ]);
   const viewsTotal = viewsRaw ? parseCompactCount(viewsRaw) : 0;
 
-  const authorHref = findMatch(cardHtml, [
-    /<a[^>]*href=["'](?:https?:\/\/pimpbunny\.com)?\/onlyfans-creators\/([^"'?#/]+)[^"']*["'][^>]*>/i,
-  ]);
+  const authorHref = cleanAuthorId(
+    findMatch(cardHtml, [
+      /<a[^>]*href=["'](?:https?:\/\/pimpbunny\.com)?\/onlyfans-creators\/([^"'?#/]+)[^"']*["'][^>]*>/i,
+    ])
+  );
   const authorName = cleanText(
     findMatch(cardHtml, [
       /<a[^>]*href=["'](?:https?:\/\/pimpbunny\.com)?\/onlyfans-creators\/[^"']+["'][^>]*>([\s\S]*?)<\/a>/i,
@@ -480,7 +598,7 @@ function parseVideosFromHtml(htmlBody) {
       const idMatch = card.match(/href=["'](?:https?:\/\/pimpbunny\.com)?\/videos\/([^"'?#/]+)\/?["']/i);
       if (!idMatch) continue;
       const id = decodeURIComponent((idMatch[1] || "").replace(/\/$/, ""));
-      if (!id || seen[id]) continue;
+      if (!isValidVideoId(id) || seen[id]) continue;
       seen[id] = true;
       videos.push(buildVideoPreviewFromCard(card, id));
     }
@@ -494,7 +612,7 @@ function parseVideosFromHtml(htmlBody) {
   let match;
   while ((match = regex.exec(source)) !== null) {
     const id = decodeURIComponent((match[2] || "").replace(/\/$/, ""));
-    if (!id || seen[id]) continue;
+    if (!isValidVideoId(id) || seen[id]) continue;
     seen[id] = true;
 
     const cardStart = Math.max(0, match.index - 200);
@@ -586,9 +704,11 @@ function extractVideoMetadata(html, videoId, uvp) {
     ])
   );
 
-  const authorHref = findMatch(source, [
-    /\/onlyfans-creators\/([^"'?#/]+)/i,
-  ]);
+  const authorHref = cleanAuthorId(
+    findMatch(source, [
+      /\/onlyfans-creators\/([^"'?#/]+)/i,
+    ])
+  );
 
   const authorName = cleanText(
     findMatch(source, [
@@ -642,6 +762,16 @@ function extractVideoMetadata(html, videoId, uvp) {
     findMatch(source, [/<meta[^>]*property=["']og:image["'][^>]*content=["']([^"']+)["'][^>]*>/i])
   );
 
+  const extractedAvatar = normalizeImageUrl(
+    findMatch(source, [
+      /<a[^>]*href=["'][^"']*\/onlyfans-creators\/[^"']*["'][^>]*>[\s\S]*?<img[^>]*src=["']([^"']+)["']/i,
+      /<img[^>]*src=["']([^"']*\/contents\/models\/[^"']+)["']/i,
+      /<div[^>]*class=["'][^"']*author[^"']*["'][^>]*>[\s\S]*?<img[^>]*src=["']([^"']+)["']/i,
+      /<div[^>]*class=["'][^"']*model[^"']*["'][^>]*>[\s\S]*?<img[^>]*src=["']([^"']+)["']/i,
+      /<img[^>]*class=["'][^"']*avatar[^"']*["'][^>]*src=["']([^"']+)["']/i,
+    ])
+  );
+
   const safePreview = uvp && uvp.iD
     ? {
         ...uvp,
@@ -673,6 +803,14 @@ function extractVideoMetadata(html, videoId, uvp) {
         scrapeFailException: null,
       };
 
+  // Author avatar must NEVER be null to avoid Hedon Haven Dart exception:
+  // "Exception: Invalid argument(s): No host specified in URI file:///Avatar%20url%20is%20null"
+  const authorAvatar =
+    extractedAvatar ||
+    (safePreview && safePreview.thumbnail) ||
+    ogThumb ||
+    "https://pimpbunny.com/favicon.ico";
+
   return {
     iD: videoId,
     plugin: PLUGIN_CODE_NAME,
@@ -683,7 +821,7 @@ function extractVideoMetadata(html, videoId, uvp) {
     authorID: authorHref || safePreview.authorID || "unknown",
     authorName: authorName || safePreview.authorName || "Unknown",
     authorSubscriberCount: null,
-    authorAvatar: null,
+    authorAvatar: authorAvatar,
     actors: [],
     description: description,
     viewsTotal: viewsTotal,
@@ -696,13 +834,14 @@ function extractVideoMetadata(html, videoId, uvp) {
     virtualReality: false,
     chapters: null,
     rawHtml: source,
-    unavailableFields: ["authorSubscriberCount", "authorAvatar", "ratingsNegativeTotal", "chapters"],
+    unavailableFields: ["authorSubscriberCount", "ratingsNegativeTotal", "chapters"],
     scrapeFailException: null,
   };
 }
 
 function extractAuthorMetadata(html, authorId) {
   const source = String(html || "");
+  const cleanId = cleanAuthorId(authorId);
   const name = cleanText(
     findMatch(source, [
       /<meta[^>]*property=["']og:title["'][^>]*content=["']([^"']+)["'][^>]*>/i,
@@ -718,7 +857,7 @@ function extractAuthorMetadata(html, authorId) {
       /<img[^>]*data-src=["']([^"']+\.(?:jpg|jpeg|png|webp|avif)(?:\?[^"']*)?)["'][^>]*>/i,
       /<img[^>]*src=["'](?!data:)([^"']+\.(?:jpg|jpeg|png|webp|avif)(?:\?[^"']*)?)["'][^>]*>/i,
     ])
-  );
+  ) || "https://pimpbunny.com/favicon.ico";
 
   const videosTotal = findMatch(source, [/(\d+(?:,\d+)*)\s*videos?/i]);
   const subs = findMatch(source, [/(\d+(?:,\d+)*)\s*(?:subscribers?|followers?)/i]);
@@ -730,10 +869,10 @@ function extractAuthorMetadata(html, authorId) {
   );
 
   return {
-    iD: authorId,
-    name: name || authorId,
+    iD: cleanId,
+    name: name || cleanId,
     plugin: PLUGIN_CODE_NAME,
-    avatar: avatar || null,
+    avatar: avatar,
     banner: null,
     aliases: [],
     description: desc,

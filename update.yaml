@@ -1,10 +1,10 @@
 # Must be strictly major.minor.patch!
-version: v0.1.6
+version: v0.1.7
 downloadUrl: "https://github.com/angel4833/pimpbunny-plugin/releases/latest/download/plugin.zip"
-sha256Sum: "add_checksum_here"
+sha256Sum: "a60d231bda9fbc87c387fb6839298de016e410f1f7f5bcc71ff35c0da016a95f"
 # multiline changelog to display to user
 changelog:
-  - Fixed Hedon Haven QuickJS bridge contract (statusCode, bodyBytes Array, Universal* schemas)
-  - Added pimpBunnyRequest browser headers and cookie persistence
-  - Fixed card parsing with lazy-load data-original/data-preview and JPEG thumbnails
-  - Extracted kt_player MP4 video stream qualities
+  - Fixed authorAvatar null crash (file:///Avatar%20url%20is%20null) by resolving creator avatar with reliable fallback
+  - Fixed search pagination parameter (&from_videos=N) so scrolling loads next pages
+  - Added author search rescue (displays creator videos when search query matches a model)
+  - Added pagination fallback for homepage and creator video lists
